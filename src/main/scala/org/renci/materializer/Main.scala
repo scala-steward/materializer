@@ -36,20 +36,7 @@ object Main extends ZCaseApp[Config] {
         start <- ZIO.succeed(currentTimeMillis())
         inferencesStream = streamModels(config.input, config.parallelism)
           .filter(model => filterGraphQueryOpt.forall(q => shouldUseGraph(q, model.model)))
-          .mapMParUnordered(config.parallelism) { model =>
-            for {
-              modelIRI <- ZIO.fromOption(findModelIRI(model.model))
-                .orElseFail(new Exception(s"Dataset with no ontology IRI in file ${model.path}"))
-              graphOpt = determineOutGraph(modelIRI, config).map(NodeFactory.createURI)
-              provenanceOpt = graphOpt.map(g => Triple.create(g, ProvDerivedFrom, NodeFactory.createURI(modelIRI)))
-              inferred = reasoner.materialize(model.model, config.outputInconsistent.bool)
-            } yield {
-              inferred match {
-                case Some(inferences) => Inferences(model.path, graphOpt, inferences ++ provenanceOpt)
-                case None             => Inconsistent(model.path)
-              }
-            }
-          }
+          .mapMParUnordered(config.parallelism)(computeInferences(_, reasoner, config))
           .tap {
             case _: Inferences      => ZIO.unit
             case Inconsistent(path) => ZIO.succeed(scribe.warn(s"Inconsistent dataset: $path"))
@@ -64,6 +51,21 @@ object Main extends ZCaseApp[Config] {
       yield ()
     }
     program.tapError(e => ZIO.succeed(e.printStackTrace())).exitCode
+  }
+
+  def computeInferences(model: ModelFromPath, materializer: Materializer, config: Config): Task[Result] = {
+    for {
+      modelIRI <- ZIO.fromOption(findModelIRI(model.model))
+        .orElseFail(new Exception(s"Dataset with no ontology IRI in file ${model.path}"))
+      graphOpt = determineOutGraph(modelIRI, config).map(NodeFactory.createURI)
+      provenanceOpt = graphOpt.map(g => Triple.create(g, ProvDerivedFrom, NodeFactory.createURI(modelIRI)))
+      inferred = materializer.materialize(model.model, config.outputInconsistent.bool)
+    } yield {
+      inferred match {
+        case Some(inferences) => Inferences(model.path, graphOpt, inferences ++ provenanceOpt)
+        case None             => Inconsistent(model.path)
+      }
+    }
   }
 
   def writeModel(graphOpt: Option[Node], triples: Set[Triple], quadsWriter: StreamRDF): RIO[Blocking, Unit] =
