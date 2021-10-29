@@ -5,8 +5,8 @@ import caseapp.core.help.{Help, WithHelp}
 import caseapp.core.parser.Parser
 import caseapp.core.util.Formatter
 import caseapp.core.{Error, RemainingArgs}
-import zio.Console.printLine
 import zio._
+import zio.console.{Console, putStrLn}
 
 import java.io.IOException
 
@@ -25,14 +25,14 @@ abstract class ZCaseApp[T](implicit val parser0: Parser[T], val messages: Help[T
 
   def run(options: T, remainingArgs: RemainingArgs): ZIO[ZEnv, Nothing, ExitCode]
 
-  private[this] def error(message: Error): ZIO[Has[Console], IOException, ExitCode] =
-    printLine(message.message).as(ExitCode.failure)
+  private[this] def error(message: Error): ZIO[Console, IOException, ExitCode] =
+    putStrLn(message.message).as(ExitCode.failure)
 
-  private[this] def helpAsked: ZIO[Has[Console], IOException, ExitCode] =
-    printLine(messages.withHelp.help).as(ExitCode.success)
+  private[this] def helpAsked: ZIO[Console, IOException, ExitCode] =
+    putStrLn(messages.withHelp.help).as(ExitCode.success)
 
-  private[this] def usageAsked: ZIO[Has[Console], IOException, ExitCode] =
-    printLine(messages.withHelp.usage).as(ExitCode.success)
+  private[this] def usageAsked: ZIO[Console, IOException, ExitCode] =
+    putStrLn(messages.withHelp.usage).as(ExitCode.success)
 
   /**
     * Arguments are expanded then parsed. By default, argument expansion is the identity function.

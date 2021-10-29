@@ -2,7 +2,8 @@ package org.renci.materializer
 
 import caseapp.core.Error.MalformedValue
 import caseapp.core.argparser.{ArgParser, SimpleArgParser}
-import org.renci.materializer.Config.{BoolValue, FalseValue, TrueValue}
+import org.renci.materializer.Config.{Arachne, BoolValue, FalseValue, Reasoner, TrueValue}
+import org.semanticweb.owlapi.model.OWLOntology
 
 final case class Config(ontologyFile: String,
                         input: String,
@@ -10,8 +11,10 @@ final case class Config(ontologyFile: String,
                         suffixOutput: BoolValue = FalseValue,
                         outputGraphName: Option[String],
                         suffixGraph: BoolValue = TrueValue,
+                        reasoner: Reasoner = Arachne,
                         markDirectTypes: BoolValue = FalseValue,
                         outputIndirectTypes: BoolValue = TrueValue,
+                        outputInconsistent: BoolValue = FalseValue,
                         parallelism: Int = 16,
                         filterGraphQuery: Option[String])
 
@@ -45,6 +48,33 @@ object Config {
       case "1"     => Right(TrueValue)
       case "0"     => Right(FalseValue)
       case _       => Left(MalformedValue("boolean value", arg))
+    }
+  }
+
+  sealed trait Reasoner {
+
+    def construct(ontology: OWLOntology, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Materializer
+
+  }
+
+  case object Arachne extends Reasoner {
+
+    def construct(ontology: OWLOntology, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Materializer =
+      ArachneMaterializer.apply(ontology, markDirectTypes, assertIndirectTypes)
+  }
+
+  case object Whelk extends Reasoner {
+
+    def construct(ontology: OWLOntology, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Materializer =
+      WhelkMaterializer.apply(ontology, markDirectTypes, assertIndirectTypes)
+
+  }
+
+  implicit val reasonerParser: ArgParser[Reasoner] = SimpleArgParser.from[Reasoner]("reasoner") { arg =>
+    arg.toLowerCase match {
+      case "arachne" => Right(Arachne)
+      case "whelk"   => Right(Whelk)
+      case _         => Left(MalformedValue("reasoner name", arg))
     }
   }
 

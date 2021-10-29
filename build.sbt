@@ -16,7 +16,7 @@ javaOptions += "-Xmx8G"
 
 testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
 
-val zioVersion = "2.0.0-M4"
+val zioVersion = "1.0.12"
 
 libraryDependencies ++= {
   Seq(
