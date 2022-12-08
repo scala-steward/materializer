@@ -2,10 +2,14 @@ package org.renci.materializer
 
 import caseapp.core.Error.MalformedValue
 import caseapp.core.argparser.{ArgParser, SimpleArgParser}
-import org.renci.materializer.Config.{Arachne, BoolValue, FalseValue, Reasoner, TrueValue}
+import org.renci.materializer.MaterializerConfig.{Arachne, BoolValue, FalseValue, Reasoner, TrueValue}
 import org.semanticweb.owlapi.model.OWLOntology
 
-final case class Config(ontologyFile: String,
+sealed trait MaterializerConfig
+
+object MaterializerConfig {
+
+  final case class File(ontologyFile: String,
                         input: String,
                         output: String,
                         suffixOutput: BoolValue = FalseValue,
@@ -16,9 +20,10 @@ final case class Config(ontologyFile: String,
                         outputIndirectTypes: BoolValue = TrueValue,
                         outputInconsistent: BoolValue = FalseValue,
                         parallelism: Int = 16,
-                        filterGraphQuery: Option[String])
+                        filterGraphQuery: Option[String]) extends MaterializerConfig
 
-object Config {
+  final case class Server(ontologyFile: String,
+                          reasoner: Reasoner = Arachne) extends MaterializerConfig
 
   /**
     * This works around some confusing behavior in case-app boolean parsing
@@ -53,20 +58,20 @@ object Config {
 
   sealed trait Reasoner {
 
-    def construct(ontology: OWLOntology, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Materializer
+    def construct(ontology: OWLOntology): Materializer
 
   }
 
   case object Arachne extends Reasoner {
 
-    def construct(ontology: OWLOntology, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Materializer =
-      ArachneMaterializer.apply(ontology, markDirectTypes, assertIndirectTypes)
+    def construct(ontology: OWLOntology): Materializer =
+      ArachneMaterializer.apply(ontology)
   }
 
   case object Whelk extends Reasoner {
 
-    def construct(ontology: OWLOntology, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Materializer =
-      WhelkMaterializer.apply(ontology, markDirectTypes, assertIndirectTypes)
+    def construct(ontology: OWLOntology): Materializer =
+      WhelkMaterializer.apply(ontology)
 
   }
 
