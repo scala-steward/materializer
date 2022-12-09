@@ -1,7 +1,9 @@
 package org.renci.materializer
 
+import org.apache.jena.datatypes.TypeMapper
 import org.apache.jena.graph.{Triple => JenaTriple}
 import org.apache.jena.rdf.model._
+import org.apache.jena.rdf.model.impl.ResourceImpl
 import org.apache.jena.vocabulary.{OWL2, RDF, RDFS, XSD}
 import org.eclipse.rdf4j.model.{BNode, IRI => SesameIRI, Literal => SesameLiteral, Statement => SesameStatement}
 import org.eclipse.rdf4j.rio.helpers.StatementCollector
@@ -67,8 +69,8 @@ class ArachneMaterializer(ontology: OWLOntology) extends Materializer {
   }
 
   override def materializeAbox(abox: OWLOntology, allowInconsistent: Boolean, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Option[OWLOntology] = {
-    val model = ModelFactory.createDefaultModel().add(ontologyAsTriples(abox).toList.asJava)
-    materializeTriples(model, allowInconsistent, markDirectTypes, assertIndirectTypes).map { triples =>
+    val assertedTriples = ontologyAsTriples(abox)
+    materializeTriples(assertedTriples, allowInconsistent, markDirectTypes, assertIndirectTypes).map { triples =>
       val axioms = mutable.Set[OWLAxiom]()
       var inconsistent = false
       triples.foreach {
