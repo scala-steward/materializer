@@ -4,7 +4,7 @@ organization := "org.renci"
 
 name := "materializer"
 
-version := "0.2.3"
+version := "0.2.4"
 
 licenses := Seq("MIT license" -> url("https://opensource.org/licenses/MIT"))
 
