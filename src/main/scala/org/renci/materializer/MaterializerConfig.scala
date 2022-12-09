@@ -3,13 +3,22 @@ package org.renci.materializer
 import caseapp.core.Error.MalformedValue
 import caseapp.core.argparser.{ArgParser, SimpleArgParser}
 import org.renci.materializer.MaterializerConfig.{Arachne, BoolValue, FalseValue, Reasoner, TrueValue}
+import org.semanticweb.owlapi.functional.parser.OWLFunctionalSyntaxOWLParserFactory
+import org.semanticweb.owlapi.io.OWLParserFactory
+import org.semanticweb.owlapi.manchestersyntax.parser.ManchesterOWLSyntaxOntologyParserFactory
 import org.semanticweb.owlapi.model.OWLOntology
+import org.semanticweb.owlapi.oboformat.OBOFormatOWLAPIParserFactory
+import org.semanticweb.owlapi.owlxml.parser.OWLXMLParserFactory
+import org.semanticweb.owlapi.rdf.rdfxml.parser.RDFXMLParserFactory
+import org.semanticweb.owlapi.rdf.turtle.parser.TurtleOntologyParserFactory
+import org.semanticweb.owlapi.rio.{RioRDFXMLParserFactory, RioTurtleParserFactory}
 
 sealed trait MaterializerConfig
 
 object MaterializerConfig {
 
   final case class File(ontologyFile: String,
+                        ontologyFormat: Option[OWLParserFactory],
                         input: String,
                         output: String,
                         suffixOutput: BoolValue = FalseValue,
@@ -23,6 +32,7 @@ object MaterializerConfig {
                         filterGraphQuery: Option[String]) extends MaterializerConfig
 
   final case class Server(ontologyFile: String,
+                          ontologyFormat: Option[OWLParserFactory],
                           reasoner: Reasoner = Arachne) extends MaterializerConfig
 
   /**
@@ -80,6 +90,17 @@ object MaterializerConfig {
       case "arachne" => Right(Arachne)
       case "whelk"   => Right(Whelk)
       case _         => Left(MalformedValue("reasoner name", arg))
+    }
+  }
+
+  implicit val formatParser: ArgParser[OWLParserFactory] = SimpleArgParser.from[OWLParserFactory]("format") { arg =>
+    arg.toLowerCase match {
+      case "ofn" => Right(new OWLFunctionalSyntaxOWLParserFactory())
+      case "owl" => Right(new RioRDFXMLParserFactory())
+      case "ttl" => Right(new RioTurtleParserFactory())
+      case "omn" => Right(new ManchesterOWLSyntaxOntologyParserFactory())
+      case "owx" => Right(new OWLXMLParserFactory())
+      case "obo" => Right(new OBOFormatOWLAPIParserFactory())
     }
   }
 
