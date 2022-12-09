@@ -79,6 +79,9 @@ object Main extends ZCommandApp[MaterializerConfig] {
 
   def loadOntology(path: String): Task[OWLOntology] = for {
     manager <- ZIO.attempt(OWLManager.createOWLOntologyManager())
+    // Manchester parser fails catastrophically when attempted on very large ontologies (even if the ontolgy is another format)
+    parsers = manager.getOntologyParsers.asScala.filterNot(_.getDefaultMIMEType == "text/owl-manchester")
+    _ = manager.setOntologyParsers(parsers.toSet.asJava)
     ontology <- ZIO.attemptBlocking(manager.loadOntology(IRI.create(new File(path))))
     _ <- ZIO.succeed(scribe.info("Loaded ontology"))
   } yield ontology
