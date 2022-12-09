@@ -1,14 +1,12 @@
 package org.renci.materializer
 
-import org.apache.jena.datatypes.TypeMapper
 import org.apache.jena.graph.{Triple => JenaTriple}
 import org.apache.jena.rdf.model._
-import org.apache.jena.rdf.model.impl.ResourceImpl
 import org.apache.jena.vocabulary.{OWL2, RDF, RDFS, XSD}
-import org.eclipse.rdf4j.model.{BNode, Literal, IRI => SesameIRI, Statement => SesameStatement}
+import org.eclipse.rdf4j.model.{BNode, IRI => SesameIRI, Literal => SesameLiteral, Statement => SesameStatement}
 import org.eclipse.rdf4j.rio.helpers.StatementCollector
 import org.geneontology.jena.OWLtoRules
-import org.geneontology.rules.engine.{ConcreteNode, RuleEngine, Triple, URI}
+import org.geneontology.rules.engine.{Literal, _}
 import org.geneontology.rules.util.Bridge
 import org.phenoscape.scowl._
 import org.renci.materializer.Materializer.IsConsistent
@@ -17,6 +15,7 @@ import org.semanticweb.owlapi.model.parameters.Imports
 import org.semanticweb.owlapi.model.{AddOntologyAnnotation, OWLAxiom, OWLOntology}
 import org.semanticweb.owlapi.rio.RioRenderer
 
+import java.lang.System.currentTimeMillis
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
@@ -26,14 +25,17 @@ class ArachneMaterializer(ontology: OWLOntology) extends Materializer {
   private val DirectTypeURI = URI(Materializer.DirectType.getURI)
   private val DirectTypeAP = AnnotationProperty(Materializer.DirectType.getURI)
   private val RDFType = URI(RDF.`type`.getURI)
+  private val RDFLangString = URI(RDF.langString.getURI)
   private val Nothing = URI(OWL2.Nothing.getURI)
   private val ontRules = Bridge.rulesFromJena(OWLtoRules.translate(ontology, Imports.INCLUDED, true, true, false, true)).to(Set)
   private val indirectRules = Bridge.rulesFromJena(OWLtoRules.indirectRules(ontology)).to(Set)
   private val arachne = new RuleEngine(ontRules ++ indirectRules, false)
 
-  private def materializeTriples(model: Model, allowInconsistent: Boolean, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Option[Set[Triple]] = {
-    val triples = model.listStatements().asScala.map(t => Bridge.tripleFromJena(t.asTriple())).to(Iterable)
+  private def materializeTriples(triples: Iterable[Triple], allowInconsistent: Boolean, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Option[Set[Triple]] = {
+    val start = currentTimeMillis()
     val wm = arachne.processTriples(triples)
+    val stop = currentTimeMillis()
+    scribe.info(s"Rule engine done in: ${(stop - start)}ms")
     val inferred = wm.facts.to(Set) -- wm.asserted
     val inconsistent = isInconsistent(inferred)
     if (!allowInconsistent && inconsistent) None
@@ -59,7 +61,8 @@ class ArachneMaterializer(ontology: OWLOntology) extends Materializer {
   }
 
   override def materialize(model: Model, allowInconsistent: Boolean, markDirectTypes: Boolean, assertIndirectTypes: Boolean): Option[Set[JenaTriple]] = {
-    materializeTriples(model, allowInconsistent, markDirectTypes, assertIndirectTypes)
+    val triples = model.listStatements().asScala.map(t => Bridge.tripleFromJena(t.asTriple())).to(Iterable)
+    materializeTriples(triples, allowInconsistent, markDirectTypes, assertIndirectTypes)
       .map(triples => triples.map(Bridge.jenaFromTriple))
   }
 
@@ -73,9 +76,9 @@ class ArachneMaterializer(ontology: OWLOntology) extends Materializer {
           axioms.add(ClassAssertion(Class(o), Individual(s)))
           if (oURI == Nothing) inconsistent = true
         case Triple(URI(s), DirectTypeURI, URI(o))  =>
-          val unannoated = ClassAssertion(Class(o), Individual(s))
-          axioms.remove(unannoated)
-          axioms.add(unannoated.getAnnotatedAxiom(Set(Annotation(DirectTypeAP, true)).asJava))
+          val unannotated = ClassAssertion(Class(o), Individual(s))
+          axioms.remove(unannotated)
+          axioms.add(unannotated.getAnnotatedAxiom(Set(Annotation(DirectTypeAP, true)).asJava))
         case Triple(URI(s), URI(p), URI(o))         =>
           axioms.add(ObjectPropertyAssertion(ObjectProperty(p), Individual(s), Individual(o)))
         case _                                      => ()
@@ -95,27 +98,27 @@ class ArachneMaterializer(ontology: OWLOntology) extends Materializer {
     case _      => false
   }
 
-  private def ontologyAsTriples(ontology: OWLOntology): Set[Statement] = {
+  private def ontologyAsTriples(ontology: OWLOntology): Set[Triple] = {
     val collector = new StatementCollector()
     new RioRenderer(ontology, collector, null).render()
-    collector.getStatements.asScala.map(sesameTripleToJena).toSet
+    collector.getStatements.asScala.map(sesameTripleToArachne).toSet
   }
 
-  def sesameTripleToJena(triple: SesameStatement): Statement = {
+  def sesameTripleToArachne(triple: SesameStatement): Triple = {
     val subject = triple.getSubject match {
-      case bnode: BNode   => new ResourceImpl(new AnonId(bnode.getID))
-      case iri: SesameIRI => ResourceFactory.createResource(iri.stringValue)
+      case bnode: BNode   => BlankNode(bnode.getID)
+      case iri: SesameIRI => URI(iri.stringValue)
     }
-    val predicate = ResourceFactory.createProperty(triple.getPredicate.stringValue)
+    val predicate = URI(triple.getPredicate.stringValue)
     val obj = triple.getObject match {
-      case bnode: BNode                                      => new ResourceImpl(new AnonId(bnode.getID))
-      case iri: SesameIRI                                    => ResourceFactory.createResource(iri.stringValue)
-      case literal: Literal if literal.getLanguage.isPresent =>
-        ResourceFactory.createLangLiteral(literal.getLabel, literal.getLanguage.get())
-      case literal: Literal                                  =>
-        ResourceFactory.createTypedLiteral(literal.getLabel, TypeMapper.getInstance.getSafeTypeByName(literal.getDatatype.stringValue))
+      case bnode: BNode                                            => BlankNode(bnode.getID)
+      case iri: SesameIRI                                          => URI(iri.stringValue)
+      case literal: SesameLiteral if literal.getLanguage.isPresent =>
+        Literal(literal.getLabel, RDFLangString, Some(literal.getLanguage.get()))
+      case literal: SesameLiteral                                  =>
+        Literal(literal.getLabel, URI(literal.getDatatype.stringValue), None)
     }
-    ResourceFactory.createStatement(subject, predicate, obj)
+    Triple(subject, predicate, obj)
   }
 
 }
