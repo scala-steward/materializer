@@ -18,6 +18,8 @@ import zio._
 import zio.interop.catz._
 import cats.implicits._
 
+import java.lang.System.currentTimeMillis
+
 object MaterializerServer {
 
   private val materializeEndpoint: PublicEndpoint[(OWLOntology, Boolean, Boolean, Boolean), String, OWLOntology, Any] =
@@ -41,7 +43,11 @@ object MaterializerServer {
 
   private val materializeService: ZServerEndpoint[Materializer, Any] = materializeEndpoint.zServerLogic { case (ontology, direct, markDirect, allowInconsistent) =>
     ZIO.service[Materializer].flatMap { mat =>
-      mat.materializeAbox(ontology, allowInconsistent, markDirect, !direct)
+      val start = currentTimeMillis()
+      val result = mat.materializeAbox(ontology, allowInconsistent, markDirect, !direct)
+      val stop = currentTimeMillis()
+      scribe.info(s"Reasoning done in: ${(stop - start)}ms")
+      result
         .map(ZIO.succeed(_))
         .getOrElse(emptyInconsistenOntology())
     }
@@ -68,7 +74,7 @@ object MaterializerServer {
         .bindHttp(8080, "0.0.0.0")
         .withHttpApp(CORS.policy.withAllowOriginAll
           .withAllowCredentials(false)
-          .apply(Router("/" -> (materializeHttp <+> docsRoute) ).orNotFound))
+          .apply(Router("/" -> (materializeHttp <+> docsRoute)).orNotFound))
         .withResponseHeaderTimeout(120.seconds.asScala)
         .withIdleTimeout(180.seconds.asScala)
         .serve

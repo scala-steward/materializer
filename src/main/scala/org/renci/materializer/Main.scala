@@ -10,6 +10,7 @@ import org.apache.jena.riot.{RDFDataMgr, RDFFormat}
 import org.apache.jena.sparql.core.Quad
 import org.apache.jena.vocabulary.{OWL2, RDF}
 import org.semanticweb.owlapi.apibinding.OWLManager
+import org.semanticweb.owlapi.io.OWLParserFactory
 import org.semanticweb.owlapi.model._
 import zio._
 import zio.stream._
@@ -18,6 +19,7 @@ import java.io.{File, FileOutputStream}
 import java.lang.System.currentTimeMillis
 import scala.jdk.CollectionConverters._
 import scala.util.Using
+import org.renci.materializer.MaterializerConfig._
 
 object Main extends ZCommandApp[MaterializerConfig] {
 
@@ -28,7 +30,7 @@ object Main extends ZCommandApp[MaterializerConfig] {
       case config: MaterializerConfig.File =>
         for {
           quadsWriter <- createStreamRDF(config.output)
-          ontology <- loadOntology(config.ontologyFile)
+          ontology <- loadOntology(config.ontologyFile, config.ontologyFormat)
           filterGraphQueryOpt <- ZIO.foreach(config.filterGraphQuery)(loadFilterGraphQuery)
           reasoner = config.reasoner.construct(ontology)
           _ <- ZIO.succeed(scribe.info("Prepared reasoner"))
@@ -48,7 +50,7 @@ object Main extends ZCommandApp[MaterializerConfig] {
           _ <- ZIO.succeed(scribe.info(s"Reasoning done in: ${(stop - start) / 1000.0}s"))
         } yield ()
       case s: MaterializerConfig.Server    =>
-        val reasonerLayer = ZLayer.fromZIO(loadOntology(s.ontologyFile).map(s.reasoner.construct))
+        val reasonerLayer = ZLayer.fromZIO(loadOntology(s.ontologyFile, s.ontologyFormat).map(s.reasoner.construct))
         MaterializerServer.serverProgram.provide(reasonerLayer)
     }
     program.tapError(e => ZIO.succeed(e.printStackTrace())).exitCode
@@ -77,8 +79,9 @@ object Main extends ZCommandApp[MaterializerConfig] {
       }
     }
 
-  def loadOntology(path: String): Task[OWLOntology] = for {
+  def loadOntology(path: String, parser: Option[OWLParserFactory]): Task[OWLOntology] = for {
     manager <- ZIO.attempt(OWLManager.createOWLOntologyManager())
+    _ = parser.foreach(p => manager.setOntologyParsers(Set(p).asJava))
     ontology <- ZIO.attemptBlocking(manager.loadOntology(IRI.create(new File(path))))
     _ <- ZIO.succeed(scribe.info("Loaded ontology"))
   } yield ontology
